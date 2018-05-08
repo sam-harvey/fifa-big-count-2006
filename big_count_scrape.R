@@ -23,6 +23,15 @@ df.big_count = html.bc %>%
 names(df.big_count) = gsub(" ", "_", names(df.big_count))
 names(df.big_count) = tolower(names(df.big_count))
 
+#Convert all counts to numeric
+df.big_count = df.big_count %>% 
+  mutate_at(-1,
+            function(x){
+              as.numeric(
+                gsub(",", "", x)
+              )
+            })
+
 # #Where is this from?
 # df.country_iso = read_csv("country_data.csv")
 
@@ -48,6 +57,9 @@ df.iso_country = df.iso_country %>%
   #Fix names with accents
   mutate(name = case_when(grepl("!", name) ~ str_extract(name, "(?<=!)(.)*"),
                           TRUE ~ name)) %>% 
+  #Remove footnotes
+  mutate(name = case_when(grepl("\\[", name) ~ str_extract(name, "(.)*(?=\\[)"),
+                          TRUE ~ name)) %>% 
   #code independent as boolean
   mutate(independent = case_when(independent == "Yes" ~ TRUE,
                                  independent == "No" ~ FALSE))
@@ -69,11 +81,6 @@ vt.unmatched = df.iso_country %>%
   anti_join(df.big_count,
             by = c("name" = "association")) %>% 
   pull(name)
-
-vt.lcs_dist = stringdist(vt.to_match[1], vt.unmatched,
-           method = "osa")
-
-vt.unmatched[which(vt.lcs_dist == min(vt.lcs_dist))]
 
 #Idea for each country to match (from big count data) find the closest string
 #Among all these filter where the same unmatched country (from ISO data) has the minimum distance
@@ -111,10 +118,38 @@ while(dim(df.match_dist)[1] > 0){
   
 }
 
-#Manual edits to where our fuzzy-match didn't work
-df.matched
+#Manual edits to where our fuzzy matching didn't work
+df.matched = df.matched %>% 
+  #Careful exact distance ties lead to duplicates
+  group_by(to_match) %>% 
+  slice(1) %>% 
+  ungroup %>% 
+  mutate(unmatched = case_when(to_match == "Cape Verde Islands" ~ "Cabo Verde",
+                               to_match %in% c("England", 
+                                               "Scotland",
+                                               "Northern Ireland",
+                                               "Wales") ~ "United Kingdom of Great Britain and Northern Ireland",
+                               to_match == "Iran" ~ "Iran (Islamic Republic of)",
+                               to_match == "Republic of Ireland" ~ "Ireland",
+                               to_match == "Netherlands Antilles" ~ "Bonaire, Sint Eustatius and Saba",
+                               to_match == "FYR Macedonia" ~ "Macedonia (the former Yugoslav Republic of)",
+                               to_match == "Tahiti" ~ "French Polynesia",
+                               to_match == "Chinese Taipei" ~ "Taiwan, Province of China",
+                               TRUE ~ unmatched)) %>% 
+  select(-distance) 
 
-
+#Player counts at an ISO country level. In effect, other than labels the only change is that british countries are aggregated to the UK
+df.iso_big_count = df.big_count %>% 
+  left_join(df.matched,
+            by = c("association" = "to_match")) %>% 
+  mutate(iso_country_name = case_when(is.na(unmatched) ~ association,
+                              T ~ unmatched)) %>% 
+  inner_join(df.iso_country,
+             by = c('iso_country_name' = 'name')) %>% 
+  group_by(iso_name, alpha_2_code, alpha_3_code) %>% 
+  summarise_if(is.numeric,
+               sum) %>% 
+  ungroup
 
 # #Where is this from?
 # df.confederation = read_csv("country_confederation.csv")
