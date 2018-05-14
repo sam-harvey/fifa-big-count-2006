@@ -146,10 +146,123 @@ df.iso_big_count = df.big_count %>%
                               T ~ unmatched)) %>% 
   inner_join(df.iso_country,
              by = c('iso_country_name' = 'name')) %>% 
-  group_by(iso_name, alpha_2_code, alpha_3_code) %>% 
+  group_by(iso_country_name, association, alpha_2_code, alpha_3_code) %>% 
   summarise_if(is.numeric,
                sum) %>% 
   ungroup
 
-# #Where is this from?
-# df.confederation = read_csv("country_confederation.csv")
+#Get the countries belonging to each association
+
+#AFC
+html.afc = read_html("https://en.wikipedia.org/w/index.php?title=Asian_Football_Confederation&oldid=840965559")
+
+df.afc = html.afc %>% 
+  html_nodes("table") %>% 
+  .[[4]] %>% 
+  html_table() %>% 
+  setNames(., gsub(" ", "_", tolower(names(.))))
+
+#CAF
+html.caf = read_html("https://en.wikipedia.org/w/index.php?title=Confederation_of_African_Football&oldid=835538543")
+
+df.caf = html.caf %>% 
+  html_nodes("table") %>% 
+  .[[6]] %>% 
+  html_table() %>% 
+  setNames(., gsub(" ", "_", tolower(names(.))))
+
+#CONCACAF
+html.concacaf = read_html("https://en.wikipedia.org/w/index.php?title=CONCACAF&oldid=840709849")
+
+df.concacaf = html.concacaf %>% 
+  html_nodes('table') %>% 
+  .[[5]] %>% 
+  html_table() %>% 
+  setNames(., gsub(" ", "_", tolower(names(.))))
+
+#UEFA
+html.uefa = read_html("https://en.wikipedia.org/w/index.php?title=UEFA&oldid=840719285")
+
+df.uefa = html.uefa %>% 
+  html_nodes('table') %>% 
+  .[[5]] %>% 
+  html_table() %>% 
+  setNames(., gsub(" ", "_", tolower(names(.))))
+
+#CONMEBOL
+html.conmebol = read_html("https://en.wikipedia.org/w/index.php?title=CONMEBOL&oldid=840486130")
+
+df.conmebol = html.conmebol %>% 
+  html_nodes('table') %>% 
+  .[[4]] %>% 
+  html_table() %>% 
+  setNames(., gsub(" ", "_", tolower(names(.))))
+
+html.ofc = read_html("https://en.wikipedia.org/w/index.php?title=Oceania_Football_Confederation&oldid=838931579")
+
+df.ofc = html.ofc %>% 
+  html_nodes('table') %>% 
+  .[[4]] %>% 
+  html_table() %>% 
+  setNames(., gsub(" ", "_", tolower(names(.))))
+
+#Put each confederation into the same format and bind them all
+df.afc = df.afc %>% 
+  filter(!str_detect(association, "\\(")) %>% 
+  mutate(association = str_extract(association, "[^\\[]*")) %>% 
+  select(association, code) %>% 
+  mutate(confederation = "AFC")
+
+df.caf = df.caf %>% 
+  filter(!str_detect(association, "\\(|-")) %>% 
+  mutate(association = str_extract(association, "[^0-9]*")) %>% 
+  select(association, code) %>% 
+  mutate(confederation = "CAF")
+
+df.conmebol = df.conmebol %>% 
+  select(association = country,
+         code = association) %>% 
+  mutate(confederation = "CONMEBOL")
+
+df.uefa = df.uefa %>% 
+  select(association,
+         code) %>% 
+  mutate(confederation = "UEFA")
+  
+df.ofc = df.ofc %>% 
+  mutate(association = str_extract(association, "[^\\[]*")) %>% 
+  select(association, code) %>% 
+  mutate(confederation = "OFC")
+
+df.concacaf = df.concacaf %>% 
+  filter(!str_detect(association, "\\(")) %>%
+  mutate(association = str_extract(association, "[^\\[]*")) %>% 
+  select(association, code) %>% 
+  mutate(confederation = "CONCACAF")
+
+df.confederations = bind_rows(df.afc,
+                              df.caf,
+                              df.conmebol,
+                              df.uefa,
+                              df.ofc,
+                              df.concacaf)
+
+#Need to do another round of fixing for matching the confederation association and the big count / iso name.
+
+df.confederations %>% 
+  full_join(df.iso_big_count,
+            by = c("association")) %>% 
+  filter(is.na(iso_country_name) |
+           is.na(code))
+
+df.confederations %>% 
+  full_join(df.iso_big_count,
+            by = c("association" = "iso_country_name")) %>% 
+  filter(is.na(alpha_3_code) |
+           is.na(code))
+
+df.confederations %>% 
+  full_join(df.iso_big_count,
+            by = c("code" = "alpha_3_code")) %>% 
+  filter(is.na(iso_country_name) |
+           is.na(confederation))
