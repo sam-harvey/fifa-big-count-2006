@@ -225,6 +225,7 @@ df.conmebol = df.conmebol %>%
   mutate(confederation = "CONMEBOL")
 
 df.uefa = df.uefa %>% 
+  mutate(association = str_extract(association, "[^\\[]*")) %>% 
   select(association,
          code) %>% 
   mutate(confederation = "UEFA")
@@ -245,24 +246,87 @@ df.confederations = bind_rows(df.afc,
                               df.conmebol,
                               df.uefa,
                               df.ofc,
-                              df.concacaf)
+                              df.concacaf) %>% 
+  mutate_if(is.character,
+            trimws)
 
 #Need to do another round of fixing for matching the confederation association and the big count / iso name.
 
-df.confederations %>% 
+vt.to_match = df.confederations %>% 
   full_join(df.iso_big_count,
             by = c("association")) %>% 
-  filter(is.na(iso_country_name) |
-           is.na(code))
+  filter(is.na(iso_country_name)) %>% 
+  pull(association)
 
-df.confederations %>% 
+vt.unmatched = df.confederations %>% 
   full_join(df.iso_big_count,
-            by = c("association" = "iso_country_name")) %>% 
-  filter(is.na(alpha_3_code) |
-           is.na(code))
+            by = c("association")) %>% 
+  filter(is.na(confederation)) %>% 
+  pull(association)
 
-df.confederations %>% 
-  full_join(df.iso_big_count,
-            by = c("code" = "alpha_3_code")) %>% 
-  filter(is.na(iso_country_name) |
-           is.na(confederation))
+#Idea for each country to match (from big count data) find the closest string
+#Among all these filter where the same unmatched country (from ISO data) has the minimum distance
+#Rinse and repeat with countries to match removed from previous stage
+
+#The Jaro distance seems to handle this best
+mat.dist = stringdistmatrix(a = vt.to_match,
+                            b = vt.unmatched,
+                            method = 'jw')
+
+rownames(mat.dist) = vt.to_match
+colnames(mat.dist) = vt.unmatched
+
+df.match_dist = mat.dist %>% 
+  as.data.frame() %>% 
+  mutate(to_match = rownames(.)) %>% 
+  gather(unmatched, distance, -to_match)
+
+df.matched = data_frame()
+
+while(dim(df.match_dist)[1] > 0){
+  
+  df.new_matches = df.match_dist %>%
+    group_by(to_match) %>% 
+    filter(distance == min(distance)) %>% 
+    group_by(unmatched) %>%
+    filter(distance == min(distance))
+  
+  df.matched = bind_rows(df.matched,
+                         df.new_matches)
+  
+  df.match_dist = df.match_dist %>% 
+    filter(!(to_match %in% df.new_matches$to_match)) %>%
+    filter(!(unmatched %in% df.new_matches$unmatched))
+  
+}
+
+df.matched = df.matched %>% 
+  #Careful exact distance ties lead to duplicates
+  group_by(to_match) %>% 
+  slice(1) %>% 
+  ungroup %>% 
+  mutate(unmatched = case_when(to_match == "Bonaire" ~ "Netherlands Antilles",
+                               
+                               to_match == "Ivory Coast" ~ "Côte d'Ivoire",
+                               to_match == "South Korea" ~ "Korea (Republic of)",
+                               to_match == "North Korea" ~ "Korea (Democratic People's Republic of)",
+                               to_match %in% c("Northern Mariana Islands", "Kiribati", "Gibraltar", "South Sudan") ~ "",
+                               TRUE ~ unmatched)) %>% 
+  mutate(unmatched = ifelse(unmatched == "", NA, unmatched)) %>% 
+  select(-distance) 
+
+df.confederations = df.confederations %>% 
+  left_join(df.matched,
+            by = c('association' = 'to_match')) %>% 
+  mutate(big_count_association = case_when(!is.na(unmatched) ~ unmatched,
+                                           TRUE ~ association)) %>% 
+  select(-unmatched) %>% 
+  as.tbl
+
+#Join it all up
+
+df.iso_big_count %>% 
+  left_join(df.confederations, 
+            by = c("association" = "big_count_association")) %>% 
+  group_by(confederation) %>% 
+  summarise_if(is.numeric, sum, na.rm = T)
