@@ -45,7 +45,7 @@ df.iso_country = wiki_table_read("https://en.wikipedia.org/w/index.php?title=ISO
 names(df.iso_country) = c("name",
                           "iso_alpha_2_code",
                           "iso_alpha_3_code",
-                          "numeric_code",
+                          "iso_numeric_code",
                           "link_to_iso_3166_2_subdivision_codes",
                           "independent")
 
@@ -64,7 +64,7 @@ df.iso_country = df.iso_country %>%
 df.iso_country %>% 
   full_join(df.big_count,
             by = c('name' = "association")) %>% 
-  filter(is.na(alpha_3_code) |
+  filter(is.na(iso_alpha_3_code) |
            is.na(registered_players))
 
 #Use fuzzy string matching rather than doing this manually
