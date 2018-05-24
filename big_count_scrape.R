@@ -43,8 +43,8 @@ df.big_count = df.big_count %>%
 df.iso_country = wiki_table_read("https://en.wikipedia.org/w/index.php?title=ISO_3166-1&oldid=833704837", 3)
 
 names(df.iso_country) = c("name",
-                          "alpha_2_code",
-                          "alpha_3_code",
+                          "iso_alpha_2_code",
+                          "iso_alpha_3_code",
                           "numeric_code",
                           "link_to_iso_3166_2_subdivision_codes",
                           "independent")
@@ -113,7 +113,7 @@ df.iso_big_count = df.big_count %>%
                               T ~ unmatched)) %>% 
   inner_join(df.iso_country,
              by = c('iso_country_name' = 'name')) %>% 
-  group_by(iso_country_name, association, alpha_2_code, alpha_3_code) %>% 
+  group_by(iso_country_name, association, iso_alpha_2_code, iso_alpha_3_code) %>% 
   summarise_if(is.numeric,
                sum) %>% 
   ungroup
@@ -146,7 +146,8 @@ df.afc = df.afc %>%
   mutate(confederation = "AFC")
 
 df.caf = df.caf %>% 
-  filter(!str_detect(association, "\\(|-")) %>% 
+  filter(!str_detect(association, "\\(|-") |
+           str_detect(association, "Guinea-Bissau")) %>% 
   mutate(association = str_extract(association, "[^0-9]*")) %>% 
   select(association, code) %>% 
   mutate(confederation = "CAF")
@@ -203,19 +204,23 @@ df.matched = df.matched %>%
   #Careful exact distance ties lead to duplicates
   group_by(to_match) %>% 
   slice(1) %>% 
-  ungroup %>% 
-  mutate(unmatched = case_when(to_match == "Bonaire" ~ "Netherlands Antilles",
-                               
-                               to_match == "Ivory Coast" ~ "Côte d'Ivoire",
-                               to_match == "South Korea" ~ "Korea (Republic of)",
-                               to_match == "North Korea" ~ "Korea (Democratic People's Republic of)",
-                               to_match %in% c("Northern Mariana Islands", "Kiribati", "Gibraltar", "South Sudan") ~ "",
-                               TRUE ~ unmatched)) %>% 
-  mutate(unmatched = ifelse(unmatched == "", NA, unmatched)) %>% 
+  ungroup  %>% 
   select(-distance) 
 
+df.final_match = data_frame(to_match = vt.to_match) %>% 
+  left_join(df.matched, by = "to_match")%>% 
+  mutate(unmatched = case_when(to_match == "Bonaire" ~ "Netherlands Antilles",
+                               to_match == "Ivory Coast" ~ "Côte d'Ivoire",
+                               to_match == "South Korea" ~ "Korea Republic",
+                               to_match == "North Korea" ~ "Korea DPR",
+                               to_match == "East Timor" ~  "Timor-Leste",
+                               to_match == "United States" ~ "USA",
+                               to_match %in% c("Northern Mariana Islands", "Kiribati", "Gibraltar", "South Sudan") ~ "",
+                               TRUE ~ unmatched)) %>% 
+  mutate(unmatched = ifelse(unmatched == "", NA, unmatched))
+
 df.confederations = df.confederations %>% 
-  left_join(df.matched,
+  left_join(df.final_match,
             by = c('association' = 'to_match')) %>% 
   mutate(big_count_association = case_when(!is.na(unmatched) ~ unmatched,
                                            TRUE ~ association)) %>% 
@@ -223,9 +228,24 @@ df.confederations = df.confederations %>%
   as.tbl
 
 #Join it all up
-
 df.iso_big_count %>% 
   left_join(df.confederations, 
             by = c("association" = "big_count_association")) %>% 
   group_by(confederation) %>% 
   summarise_if(is.numeric, sum, na.rm = T)
+
+df.iso_big_count %>% 
+  left_join(df.confederations, 
+            by = c("association" = "big_count_association")) %>% 
+  filter(is.na(confederation))
+
+#Check the countries without recorded player counts
+#Looks like the kind of small countries we would expect them not to connect stats for
+df.confederations %>%
+  anti_join(df.iso_big_count, by = c("big_count_association" = "association" )) 
+
+write_csv(df.confederations,
+          path = 'fifa_confederation_countries.csv')
+
+write_csv(df.iso_big_count,
+          path = 'fifa_big_count_2016.csv')
