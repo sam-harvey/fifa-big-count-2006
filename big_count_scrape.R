@@ -11,6 +11,8 @@ library(stringr)
 library(rvest)
 library(stringdist)
 
+source("functions.R")
+
 #https://web.archive.org/web/20160304131953/http://www.fifa.com/worldfootball/bigcount/allplayers.html
 html.bc = read_html("https://web.archive.org/web/20160304131953/http://www.fifa.com/worldfootball/bigcount/allplayers.html")
 
@@ -38,13 +40,7 @@ df.big_count = df.big_count %>%
 # https://en.wikipedia.org/wiki/ISO_3166-1
 # Have to get this from wiki because ISO charges for their standards, weird.
 
-html.iso = read_html("https://en.wikipedia.org/w/index.php?title=ISO_3166-1&oldid=833704837")
-
-df.iso_country = html.iso %>% 
-  html_nodes("table") %>% 
-  .[[3]] %>% 
-  html_table(header = TRUE) %>% 
-  as.tbl 
+df.iso_country = wiki_table_read("https://en.wikipedia.org/w/index.php?title=ISO_3166-1&oldid=833704837", 3)
 
 names(df.iso_country) = c("name",
                           "alpha_2_code",
@@ -86,37 +82,8 @@ vt.unmatched = df.iso_country %>%
 #Among all these filter where the same unmatched country (from ISO data) has the minimum distance
 #Rinse and repeat with countries to match removed from previous stage
 
-#The Jaro distance seems to handle this best
-mat.dist = stringdistmatrix(a = vt.to_match,
-                            b = vt.unmatched,
-                            method = 'jw')
-
-rownames(mat.dist) = vt.to_match
-colnames(mat.dist) = vt.unmatched
-
-df.match_dist = mat.dist %>% 
-  as.data.frame() %>% 
-  mutate(to_match = rownames(.)) %>% 
-  gather(unmatched, distance, -to_match)
-
-df.matched = data_frame()
-
-while(dim(df.match_dist)[1] > 0){
-  
-  df.new_matches = df.match_dist %>%
-    group_by(to_match) %>% 
-    filter(distance == min(distance)) %>% 
-    group_by(unmatched) %>%
-    filter(distance == min(distance))
-  
-  df.matched = bind_rows(df.matched,
-                         df.new_matches)
-  
-  df.match_dist = df.match_dist %>% 
-    filter(!(to_match %in% df.new_matches$to_match)) %>%
-    filter(!(unmatched %in% df.new_matches$unmatched))
-  
-}
+df.matched = match_to_candidates(vt.to_match,
+                                 vt.unmatched)
 
 #Manual edits to where our fuzzy matching didn't work
 df.matched = df.matched %>% 
@@ -154,57 +121,22 @@ df.iso_big_count = df.big_count %>%
 #Get the countries belonging to each association
 
 #AFC
-html.afc = read_html("https://en.wikipedia.org/w/index.php?title=Asian_Football_Confederation&oldid=840965559")
-
-df.afc = html.afc %>% 
-  html_nodes("table") %>% 
-  .[[4]] %>% 
-  html_table() %>% 
-  setNames(., gsub(" ", "_", tolower(names(.))))
+df.afc = wiki_table_read("https://en.wikipedia.org/w/index.php?title=Asian_Football_Confederation&oldid=840965559", 4)
 
 #CAF
-html.caf = read_html("https://en.wikipedia.org/w/index.php?title=Confederation_of_African_Football&oldid=835538543")
-
-df.caf = html.caf %>% 
-  html_nodes("table") %>% 
-  .[[6]] %>% 
-  html_table() %>% 
-  setNames(., gsub(" ", "_", tolower(names(.))))
+df.caf = wiki_table_read("https://en.wikipedia.org/w/index.php?title=Confederation_of_African_Football&oldid=835538543", 6)
 
 #CONCACAF
-html.concacaf = read_html("https://en.wikipedia.org/w/index.php?title=CONCACAF&oldid=840709849")
-
-df.concacaf = html.concacaf %>% 
-  html_nodes('table') %>% 
-  .[[5]] %>% 
-  html_table() %>% 
-  setNames(., gsub(" ", "_", tolower(names(.))))
+df.concacaf = wiki_table_read("https://en.wikipedia.org/w/index.php?title=CONCACAF&oldid=840709849", 5)
 
 #UEFA
-html.uefa = read_html("https://en.wikipedia.org/w/index.php?title=UEFA&oldid=840719285")
-
-df.uefa = html.uefa %>% 
-  html_nodes('table') %>% 
-  .[[5]] %>% 
-  html_table() %>% 
-  setNames(., gsub(" ", "_", tolower(names(.))))
+df.uefa = wiki_table_read("https://en.wikipedia.org/w/index.php?title=UEFA&oldid=840719285", 5)
 
 #CONMEBOL
-html.conmebol = read_html("https://en.wikipedia.org/w/index.php?title=CONMEBOL&oldid=840486130")
+df.conmebol = wiki_table_read("https://en.wikipedia.org/w/index.php?title=CONMEBOL&oldid=840486130", 4)
 
-df.conmebol = html.conmebol %>% 
-  html_nodes('table') %>% 
-  .[[4]] %>% 
-  html_table() %>% 
-  setNames(., gsub(" ", "_", tolower(names(.))))
-
-html.ofc = read_html("https://en.wikipedia.org/w/index.php?title=Oceania_Football_Confederation&oldid=838931579")
-
-df.ofc = html.ofc %>% 
-  html_nodes('table') %>% 
-  .[[4]] %>% 
-  html_table() %>% 
-  setNames(., gsub(" ", "_", tolower(names(.))))
+#OFC
+df.ofc = wiki_table_read("https://en.wikipedia.org/w/index.php?title=Oceania_Football_Confederation&oldid=838931579", 4)
 
 #Put each confederation into the same format and bind them all
 df.afc = df.afc %>% 
@@ -264,41 +196,8 @@ vt.unmatched = df.confederations %>%
   filter(is.na(confederation)) %>% 
   pull(association)
 
-#Idea for each country to match (from big count data) find the closest string
-#Among all these filter where the same unmatched country (from ISO data) has the minimum distance
-#Rinse and repeat with countries to match removed from previous stage
-
-#The Jaro distance seems to handle this best
-mat.dist = stringdistmatrix(a = vt.to_match,
-                            b = vt.unmatched,
-                            method = 'jw')
-
-rownames(mat.dist) = vt.to_match
-colnames(mat.dist) = vt.unmatched
-
-df.match_dist = mat.dist %>% 
-  as.data.frame() %>% 
-  mutate(to_match = rownames(.)) %>% 
-  gather(unmatched, distance, -to_match)
-
-df.matched = data_frame()
-
-while(dim(df.match_dist)[1] > 0){
-  
-  df.new_matches = df.match_dist %>%
-    group_by(to_match) %>% 
-    filter(distance == min(distance)) %>% 
-    group_by(unmatched) %>%
-    filter(distance == min(distance))
-  
-  df.matched = bind_rows(df.matched,
-                         df.new_matches)
-  
-  df.match_dist = df.match_dist %>% 
-    filter(!(to_match %in% df.new_matches$to_match)) %>%
-    filter(!(unmatched %in% df.new_matches$unmatched))
-  
-}
+df.matched = match_to_candidates(vt.to_match,
+                                 vt.unmatched)
 
 df.matched = df.matched %>% 
   #Careful exact distance ties lead to duplicates
