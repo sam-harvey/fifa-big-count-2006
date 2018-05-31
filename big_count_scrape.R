@@ -10,10 +10,11 @@ library(tidyr)
 library(stringr)
 library(rvest)
 library(stringdist)
+library(testthat)
+library(here)
 
 source("functions.R")
 
-#https://web.archive.org/web/20160304131953/http://www.fifa.com/worldfootball/bigcount/allplayers.html
 html.bc = read_html("https://web.archive.org/web/20160304131953/http://www.fifa.com/worldfootball/bigcount/allplayers.html")
 
 df.big_count = html.bc %>%
@@ -34,8 +35,6 @@ df.big_count = df.big_count %>%
               )
             })
 
-# #Where is this from?
-# df.country_iso = read_csv("country_data.csv")
 
 # https://en.wikipedia.org/wiki/ISO_3166-1
 # Have to get this from wiki because ISO charges for their standards, weird.
@@ -81,7 +80,6 @@ vt.unmatched = df.iso_country %>%
 #Idea for each country to match (from big count data) find the closest string
 #Among all these filter where the same unmatched country (from ISO data) has the minimum distance
 #Rinse and repeat with countries to match removed from previous stage
-
 df.matched = match_to_candidates(vt.to_match,
                                  vt.unmatched)
 
@@ -248,4 +246,4 @@ write_csv(df.confederations,
           path = 'fifa_confederation_countries.csv')
 
 write_csv(df.iso_big_count,
-          path = 'fifa_big_count_2016.csv')
+          path = 'fifa_big_count_2006.csv')
