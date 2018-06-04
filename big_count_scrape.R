@@ -225,25 +225,16 @@ df.confederations = df.confederations %>%
   select(-unmatched) %>% 
   as.tbl
 
-#Join it all up
-df.iso_big_count %>% 
-  left_join(df.confederations, 
-            by = c("association" = "big_count_association")) %>% 
-  group_by(confederation) %>% 
-  summarise_if(is.numeric, sum, na.rm = T)
-
-df.iso_big_count %>% 
-  left_join(df.confederations, 
-            by = c("association" = "big_count_association")) %>% 
-  filter(is.na(confederation))
-
-#Check the countries without recorded player counts
-#Looks like the kind of small countries we would expect them not to connect stats for
-df.confederations %>%
-  anti_join(df.iso_big_count, by = c("big_count_association" = "association" )) 
+#Create long form of big count
+df.iso_big_count_long = df.iso_big_count %>%
+  gather(count_variable, value,
+         -c(iso_country_name, association, iso_alpha_2_code, iso_alpha_3_code, iso_numeric_code))
 
 write_csv(df.confederations,
           path = 'fifa_confederation_countries.csv')
 
 write_csv(df.iso_big_count,
           path = 'fifa_big_count_2006.csv')
+
+write_csv(df.iso_big_count_long,
+          path = 'fifa_big_count_2006_long.csv')
